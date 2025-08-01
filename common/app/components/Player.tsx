@@ -302,7 +302,11 @@ const Player = React.memo(function Player({
                 originalEnd: s.originalEnd,
                 displayTime: timeDurationDisplay(s.originalStart + offset, length),
                 track: s.track,
-                index: i,
+                index: s.index, // 保留原始index，确保双层显示逻辑正常工作
+                karaokeSegments: s.karaokeSegments ? s.karaokeSegments.map(segment => ({
+                    ...segment,
+                    startTime: segment.startTime + offset // 调整卡拉OK片段的时间戳
+                })) : undefined,
             }));
 
             if (forwardToVideo) {
@@ -375,6 +379,7 @@ const Player = React.memo(function Player({
                         displayTime: timeDurationDisplay(s.start + offset, length),
                         track: s.track,
                         index: i,
+                        karaokeSegments: s.karaokeSegments, // 传递卡拉OK数据
                     }));
 
                     setSubtitlesSentThroughChannel(false);
@@ -508,11 +513,11 @@ const Player = React.memo(function Player({
                             mediaTimestamp: mediaTimestamp ?? 0,
                             file: videoFile
                                 ? {
-                                      name: videoFile.name,
-                                      blobUrl: createBlobUrl(videoFile),
-                                      audioTrack: channel?.selectedAudioTrack,
-                                      playbackRate: channel?.playbackRate,
-                                  }
+                                    name: videoFile.name,
+                                    blobUrl: createBlobUrl(videoFile),
+                                    audioTrack: channel?.selectedAudioTrack,
+                                    playbackRate: channel?.playbackRate,
+                                }
                                 : undefined,
                             audio,
                             image,
@@ -771,11 +776,11 @@ const Player = React.memo(function Player({
                             videoFile === undefined
                                 ? undefined
                                 : {
-                                      name: videoFile.name,
-                                      audioTrack: selectedAudioTrack,
-                                      playbackRate,
-                                      blobUrl: createBlobUrl(videoFile),
-                                  },
+                                    name: videoFile.name,
+                                    audioTrack: selectedAudioTrack,
+                                    playbackRate,
+                                    blobUrl: createBlobUrl(videoFile),
+                                },
                         ...cardTextFieldValues,
                     },
                     postMineAction,

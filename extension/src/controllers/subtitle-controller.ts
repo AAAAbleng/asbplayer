@@ -261,25 +261,25 @@ export default class SubtitleController {
         const notificationOverlayParams: ElementOverlayParams =
             this._getSubtitleTrackAlignment(0) === 'bottom'
                 ? {
-                      targetElement: this.video,
-                      nonFullscreenContainerClassName: 'asbplayer-notification-container-top',
-                      nonFullscreenContentClassName: 'asbplayer-notification',
-                      fullscreenContainerClassName: 'asbplayer-notification-container-top',
-                      fullscreenContentClassName: 'asbplayer-notification',
-                      offsetAnchor: OffsetAnchor.top,
-                      contentWidthPercentage: -1,
-                      onMouseOver: (event: MouseEvent) => this.onMouseOver?.(event),
-                  }
+                    targetElement: this.video,
+                    nonFullscreenContainerClassName: 'asbplayer-notification-container-top',
+                    nonFullscreenContentClassName: 'asbplayer-notification',
+                    fullscreenContainerClassName: 'asbplayer-notification-container-top',
+                    fullscreenContentClassName: 'asbplayer-notification',
+                    offsetAnchor: OffsetAnchor.top,
+                    contentWidthPercentage: -1,
+                    onMouseOver: (event: MouseEvent) => this.onMouseOver?.(event),
+                }
                 : {
-                      targetElement: this.video,
-                      nonFullscreenContainerClassName: 'asbplayer-notification-container-bottom',
-                      nonFullscreenContentClassName: 'asbplayer-notification',
-                      fullscreenContainerClassName: 'asbplayer-notification-container-bottom',
-                      fullscreenContentClassName: 'asbplayer-notification',
-                      offsetAnchor: OffsetAnchor.bottom,
-                      contentWidthPercentage: -1,
-                      onMouseOver: (event: MouseEvent) => this.onMouseOver?.(event),
-                  };
+                    targetElement: this.video,
+                    nonFullscreenContainerClassName: 'asbplayer-notification-container-bottom',
+                    nonFullscreenContentClassName: 'asbplayer-notification',
+                    fullscreenContainerClassName: 'asbplayer-notification-container-bottom',
+                    fullscreenContentClassName: 'asbplayer-notification',
+                    offsetAnchor: OffsetAnchor.bottom,
+                    contentWidthPercentage: -1,
+                    onMouseOver: (event: MouseEvent) => this.onMouseOver?.(event),
+                };
 
         return { subtitleOverlayParams, topSubtitleOverlayParams, notificationOverlayParams };
     }
@@ -325,6 +325,63 @@ export default class SubtitleController {
                 this.showingSubtitles === undefined ||
                 !this._arrayEquals(showingSubtitles, this.showingSubtitles, (a, b) => a.index === b.index);
 
+            // 检查是否有卡拉OK字幕需要更新
+            const hasKaraokeSubtitles = showingSubtitles.some(s => s.karaokeSegments && s.karaokeSegments.length > 0);
+
+            // 对于卡拉OK字幕，需要特殊处理轮动显示和保持显示
+            const allKaraokeSubtitles = this.subtitleCollection.subtitles.filter(s => s.karaokeSegments && s.karaokeSegments.length > 0);
+            if (hasKaraokeSubtitles) {
+                const currentKaraokeSubtitles = showingSubtitles.filter(s => s.karaokeSegments && s.karaokeSegments.length > 0);
+
+                // 如果没有当前显示的卡拉OK字幕，找到最近结束的字幕保持显示
+                if (currentKaraokeSubtitles.length === 0) {
+                    const recentEndedSubtitle = allKaraokeSubtitles
+                        .filter(s => now >= s.end && this._trackEnabled(s))
+                        .sort((a, b) => b.end - a.end)[0]; // 按结束时间降序排列，取最近的
+
+                    if (recentEndedSubtitle) {
+                        showingSubtitles.push(recentEndedSubtitle);
+                        currentKaraokeSubtitles.push(recentEndedSubtitle);
+                    }
+                }
+
+                for (const currentSub of currentKaraokeSubtitles) {
+                    // 检查是否需要显示前一句（在上行保留）
+                    const prevSubtitle = allKaraokeSubtitles.find(s =>
+                        s.index === currentSub.index - 1 &&
+                        this._trackEnabled(s)
+                    );
+
+                    if (prevSubtitle && now >= prevSubtitle.end && now >= currentSub.start) {
+                        // 前一句已结束且当前句已开始，保留前一句在上行
+                        if (!showingSubtitles.find(s => s.index === prevSubtitle.index)) {
+                            showingSubtitles.push(prevSubtitle);
+                        }
+                    }
+
+                    // 检查下一句是否开始（轮动触发条件）
+                    const nextSubtitle = allKaraokeSubtitles.find(s =>
+                        s.index === currentSub.index + 1 &&
+                        this._trackEnabled(s)
+                    );
+
+                    if (nextSubtitle && now >= nextSubtitle.start) {
+                        // 下一句开始时，前前句消失
+                        const prevPrevSubtitle = allKaraokeSubtitles.find(s =>
+                            s.index === currentSub.index - 1 &&
+                            this._trackEnabled(s)
+                        );
+
+                        if (prevPrevSubtitle) {
+                            const indexToRemove = showingSubtitles.findIndex(s => s.index === prevPrevSubtitle.index);
+                            if (indexToRemove !== -1) {
+                                showingSubtitles.splice(indexToRemove, 1);
+                            }
+                        }
+                    }
+                }
+            }
+
             if (subtitlesAreNew) {
                 this.showingSubtitles = showingSubtitles;
                 this._autoCopyToClipboard(showingSubtitles);
@@ -336,7 +393,7 @@ export default class SubtitleController {
             if ((!showOffset && !this._displaySubtitles) || this._forceHideSubtitles) {
                 this.bottomSubtitlesElementOverlay.hide();
                 this.topSubtitlesElementOverlay.hide();
-            } else if (subtitlesAreNew || shouldRenderOffset) {
+            } else if (subtitlesAreNew || shouldRenderOffset || hasKaraokeSubtitles) {
                 this._resetUnblurState();
                 if (this.shouldRenderBottomOverlay) {
                     const showingSubtitlesBottom = showingSubtitles.filter(
@@ -427,8 +484,7 @@ export default class SubtitleController {
                         const width = imageScale * subtitle.textImage.image.width;
 
                         return `
-                            <div data-track="${
-                                subtitle.track ?? 0
+                            <div data-track="${subtitle.track ?? 0
                             }" style="max-width:${width}px;margin:auto;" class="${className}"}">
                                 <img
                                     style="width:100%;"
@@ -437,6 +493,9 @@ export default class SubtitleController {
                                 />
                             </div>
                         `;
+                    } else if (subtitle.karaokeSegments && subtitle.karaokeSegments.length > 0) {
+                        // 卡拉OK字幕渲染
+                        return this._buildKaraokeTextHtml(subtitle);
                     } else {
                         return this._buildTextHtml(subtitle.text, subtitle.track);
                     }
@@ -449,7 +508,64 @@ export default class SubtitleController {
     private _buildTextHtml(text: string, track?: number) {
         return `<span data-track="${track ?? 0}" class="${this._subtitleClasses(track)}" style="${this._subtitleStyles(
             track
-        )}">${text}</span>`;
+        )}; white-space: nowrap; text-align: left;">${text}</span>`;
+    }
+
+    /**
+     * 构建卡拉OK字幕HTML，根据当前播放时间逐字显示文字
+     * 支持双行轮换显示效果
+     */
+    private _buildKaraokeTextHtml(subtitle: SubtitleModelWithIndex): string {
+        if (!subtitle.karaokeSegments || subtitle.karaokeSegments.length === 0) {
+            return this._buildTextHtml(subtitle.text, subtitle.track);
+        }
+
+        const currentTime = 1000 * this.video.currentTime;
+        const baseClasses = this._subtitleClasses(subtitle.track);
+        const baseStyles = this._subtitleStyles(subtitle.track);
+
+        // 判断当前字幕的轮动状态
+        const isCurrentlyShowing = currentTime >= subtitle.start && currentTime < subtitle.end;
+        const hasFinished = currentTime >= subtitle.end;
+
+        // 字幕轮动逻辑：每句话都经历 下行显示 → 上行保留 → 消失
+        // 这里简化处理，主要逻辑在主显示控制中处理
+        const isTopLine = hasFinished; // 已结束的字幕移到上行
+
+        // 添加行位置样式，允许换行并设置紧凑行间距，并设置固定宽度容器
+        const containerWidth = 'width: 80%; margin: 0 auto;'; // 固定宽度并居中
+        const lineStyle = isTopLine
+            ? `position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 10px; white-space: normal; text-align: left; line-height: 1.2; ${containerWidth}`
+            : `position: relative; white-space: normal; text-align: left; line-height: 1.2; ${containerWidth}`;
+
+        const combinedStyles = `${baseStyles}; ${lineStyle}`;
+
+        let html = `<span data-track="${subtitle.track ?? 0}" class="${baseClasses}" style="${combinedStyles}">`;
+
+        // 检测是否为英文内容（包含英文字母）
+        const hasEnglish = /[a-zA-Z]/.test(subtitle.text);
+
+        for (let i = 0; i < subtitle.karaokeSegments.length; i++) {
+            const segment = subtitle.karaokeSegments[i];
+            const shouldShow = currentTime >= segment.startTime;
+
+            if (shouldShow) {
+                let segmentText = segment.text;
+
+                // 如果是英文内容，且当前片段不是第一个，且前一个片段也显示了，且当前片段不以标点符号开头
+                if (hasEnglish && i > 0 && currentTime >= subtitle.karaokeSegments[i - 1].startTime && !/^[.,!?;:]/.test(segmentText)) {
+                    // 在英文单词前添加空格
+                    segmentText = ' ' + segmentText;
+                }
+
+                // 显示文字，使用原有样式，确保inline显示
+                html += `<span style="display: inline;">${segmentText}</span>`;
+            }
+            // 如果时间未到，则不显示该片段（文字逐个出现效果）
+        }
+
+        html += '</span>';
+        return html;
     }
 
     unbind() {
@@ -540,6 +656,10 @@ export default class SubtitleController {
             originalEnd: s.originalEnd,
             track: s.track,
             index: s.index,
+            karaokeSegments: s.karaokeSegments ? s.karaokeSegments.map(segment => ({
+                ...segment,
+                startTime: segment.startTime + offset // 调整卡拉OK片段的时间戳
+            })) : undefined,
         }));
 
         this.lastOffsetChangeTimestamp = Date.now();

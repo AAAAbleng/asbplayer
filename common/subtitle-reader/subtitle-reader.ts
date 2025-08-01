@@ -2,11 +2,14 @@ import { compile as parseAss } from 'ass-compiler';
 import SrtParser from '@qgustavor/srt-parser';
 import { WebVTT } from 'vtt.js';
 import { XMLParser } from 'fast-xml-parser';
-import { SubtitleHtml, SubtitleTextImage } from '@project/common';
+import { SubtitleHtml, SubtitleTextImage, KaraokeTextSegment } from '@project/common';
 
 const vttClassRegex = /<(\/)?c(\.[^>]*)?>/g;
 const assNewLineRegex = RegExp(/\\[nN]/, 'ig');
 const helperElement = document.createElement('div');
+
+// 卡拉OK VTT时间戳正则表达式：匹配 <00:00:06.000> 格式
+const karaokeTimestampRegex = /<(\d{2}:\d{2}:\d{2}\.\d{3})>/g;
 
 interface SubtitleNode {
     start: number;
@@ -14,6 +17,7 @@ interface SubtitleNode {
     text: string;
     textImage?: SubtitleTextImage;
     track: number;
+    karaokeSegments?: KaraokeTextSegment[]; // 卡拉OK字幕的逐字时间信息
 }
 
 export interface TextFilter {
@@ -147,7 +151,22 @@ export default class SubtitleReader {
                 let buffer: VTTCue[] = [];
 
                 parser.oncue = (c: VTTCue) => {
-                    c.text = this._filterText(c.text.replaceAll(vttClassRegex, ''));
+                    const originalText = c.text;
+
+                    // 检测是否为卡拉OK式字幕（包含时间戳）
+                    const hasKaraokeTimestamps = karaokeTimestampRegex.test(originalText);
+                    karaokeTimestampRegex.lastIndex = 0; // 重置正则表达式状态
+
+                    if (hasKaraokeTimestamps) {
+                        // 处理卡拉OK字幕
+                        const subtitleStartTime = Math.floor(c.startTime * 1000);
+                        const { cleanText, karaokeSegments } = this._parseKaraokeVttText(originalText, subtitleStartTime);
+                        c.text = this._filterText(cleanText);
+                        (c as any).karaokeSegments = karaokeSegments; // 临时存储卡拉OK数据
+                    } else {
+                        // 处理普通VTT字幕
+                        c.text = this._filterText(c.text.replaceAll(vttClassRegex, ''));
+                    }
 
                     if (isFromNetflix) {
                         const lines = c.text.split('\n');
@@ -178,12 +197,19 @@ export default class SubtitleReader {
 
                     for (const buffer of allBuffers) {
                         for (const c of buffer) {
-                            nodes.push({
+                            const node: SubtitleNode = {
                                 start: Math.floor(c.startTime * 1000),
                                 end: Math.floor(c.endTime * 1000),
                                 text: c.text,
                                 track: track,
-                            });
+                            };
+
+                            // 如果有卡拉OK数据，添加到节点中
+                            if ((c as any).karaokeSegments) {
+                                node.karaokeSegments = (c as any).karaokeSegments;
+                            }
+
+                            nodes.push(node);
                         }
                     }
 
@@ -228,7 +254,7 @@ export default class SubtitleReader {
                     continue;
                 }
 
-                let parts = [];
+                let parts: string[] = [];
 
                 if (typeof row['#text'] === 'string') {
                     parts.push(row['#text']);
@@ -537,5 +563,122 @@ export default class SubtitleReader {
 
     async filesToSrt(files: File[]) {
         return this.subtitlesToSrt(await this.subtitles(files));
+    }
+
+    /**
+     * 解析卡拉OK式VTT字幕文本
+     * 格式：每一天都<c>充满</c><00:00:06.000><c>着</c><00:00:06.500><c>新的</c><00:00:07.000><c>可能</c>。
+     */
+    private _parseKaraokeVttText(text: string, subtitleStartTime: number): { cleanText: string; karaokeSegments: KaraokeTextSegment[] } {
+        const segments: KaraokeTextSegment[] = [];
+        let currentTime = subtitleStartTime;
+        let position = 0;
+
+        // 解析文本，提取时间戳和高亮标记
+        while (position < text.length) {
+            // 查找下一个时间戳
+            const timestampMatch = karaokeTimestampRegex.exec(text.slice(position));
+            karaokeTimestampRegex.lastIndex = 0; // 重置正则表达式状态
+
+            let nextTimestampPos = timestampMatch ? position + timestampMatch.index : text.length;
+            let segmentText = text.slice(position, nextTimestampPos);
+
+            // 处理当前片段中的 <c> 标签
+            let segmentPosition = 0;
+            while (segmentPosition < segmentText.length) {
+                const cTagStart = segmentText.indexOf('<c>', segmentPosition);
+
+                if (cTagStart === -1) {
+                    // 没有更多 <c> 标签，添加剩余文本
+                    const remainingText = segmentText.slice(segmentPosition);
+                    if (remainingText) {
+                        segments.push({
+                            text: remainingText,
+                            startTime: currentTime,
+                            highlighted: false
+                        });
+                    }
+                    break;
+                }
+
+                // 添加 <c> 标签前的文本
+                if (cTagStart > segmentPosition) {
+                    const beforeCTag = segmentText.slice(segmentPosition, cTagStart);
+                    segments.push({
+                        text: beforeCTag,
+                        startTime: currentTime,
+                        highlighted: false
+                    });
+                }
+
+                // 查找 </c> 标签
+                const cTagEnd = segmentText.indexOf('</c>', cTagStart);
+                if (cTagEnd === -1) {
+                    // 没有找到结束标签，将剩余文本作为高亮处理
+                    const highlightedText = segmentText.slice(cTagStart + 3);
+                    if (highlightedText) {
+                        segments.push({
+                            text: highlightedText,
+                            startTime: currentTime,
+                            highlighted: true
+                        });
+                    }
+                    break;
+                }
+
+                // 提取高亮文本
+                const highlightedText = segmentText.slice(cTagStart + 3, cTagEnd);
+                if (highlightedText) {
+                    segments.push({
+                        text: highlightedText,
+                        startTime: currentTime,
+                        highlighted: true
+                    });
+                }
+
+                segmentPosition = cTagEnd + 4; // 跳过 </c>
+            }
+
+            // 更新时间和位置
+            if (timestampMatch) {
+                currentTime = this._parseVttTimestamp(timestampMatch[1]);
+                position = nextTimestampPos + timestampMatch[0].length;
+            } else {
+                break;
+            }
+        }
+
+        // 生成完整的cleanText，在英文单词间添加空格
+        let cleanText = '';
+        const hasEnglish = /[a-zA-Z]/.test(text);
+
+        for (let i = 0; i < segments.length; i++) {
+            const segment = segments[i];
+            let segmentText = segment.text;
+
+            // 如果是英文内容，且当前片段不是第一个，且当前片段不以标点符号开头，且前一个片段包含英文字母
+            if (hasEnglish && i > 0 && !/^[.,!?;:]/.test(segmentText) && /[a-zA-Z]/.test(segments[i - 1].text) && /[a-zA-Z]/.test(segmentText)) {
+                // 在英文单词前添加空格
+                segmentText = ' ' + segmentText;
+            }
+
+            cleanText += segmentText;
+        }
+
+        return { cleanText, karaokeSegments: segments };
+    }
+
+    /**
+     * 解析VTT时间戳格式 (HH:MM:SS.mmm) 转换为毫秒
+     */
+    private _parseVttTimestamp(timestamp: string): number {
+        const parts = timestamp.split(':');
+        const hours = parseInt(parts[0], 10);
+        const minutes = parseInt(parts[1], 10);
+        const secondsAndMs = parts[2].split('.');
+        const seconds = parseInt(secondsAndMs[0], 10);
+        const milliseconds = parseInt(secondsAndMs[1], 10);
+
+        return hours * 3600000 + minutes * 60000 + seconds * 1000 + milliseconds;
     }
 }

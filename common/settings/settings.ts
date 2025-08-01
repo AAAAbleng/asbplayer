@@ -9,6 +9,7 @@ export enum PauseOnHoverMode {
 export interface MiscSettings {
     readonly themeType: 'dark' | 'light';
     readonly copyToClipboardOnMine: boolean;
+    readonly subtitleOffsetAffectsMining: boolean; // 新增：字幕偏移是否影响mining功能
     readonly autoPausePreference: AutoPausePreference;
     readonly seekDuration: number;
     readonly speedChangeStep: number;
@@ -282,10 +283,10 @@ export type KeyBindName = keyof KeyBindSet;
 
 export interface AsbplayerSettings
     extends MiscSettings,
-        AnkiSettings,
-        SubtitleSettings,
-        StreamingVideoSettings,
-        WebSocketClientSettings {
+    AnkiSettings,
+    SubtitleSettings,
+    StreamingVideoSettings,
+    WebSocketClientSettings {
     readonly subtitlePreview: string;
 }
 

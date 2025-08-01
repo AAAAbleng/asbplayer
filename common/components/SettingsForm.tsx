@@ -439,10 +439,10 @@ interface KeyBindProperties {
 const modifierKeyReplacements: { [key: string]: string } = isMacOs
     ? {}
     : {
-          '⌃': 'ctrl',
-          '⇧': 'shift',
-          '⌥': 'alt',
-      };
+        '⌃': 'ctrl',
+        '⇧': 'shift',
+        '⌥': 'alt',
+    };
 
 const modifierKeys = ['⌃', '⇧', '⌥', 'ctrl', 'shift', 'alt', 'option', 'control', 'command', '⌘'];
 
@@ -883,6 +883,7 @@ export default function SettingsForm({
         miningHistoryStorageLimit,
         themeType,
         copyToClipboardOnMine,
+        subtitleOffsetAffectsMining,
         rememberSubtitleOffset,
         autoCopyCurrentSubtitle,
         alwaysPlayOnSubtitleRepeat,
@@ -1373,9 +1374,8 @@ export default function SettingsForm({
     }, []);
     const handleExportSettings = useCallback(() => {
         const now = new Date();
-        const timeString = `${now.getFullYear()}-${
-            now.getMonth() + 1
-        }-${now.getDate()}-${now.getHours()}-${now.getMinutes()}-${now.getSeconds()}`;
+        const timeString = `${now.getFullYear()}-${now.getMonth() + 1
+            }-${now.getDate()}-${now.getHours()}-${now.getMinutes()}-${now.getSeconds()}`;
         download(
             new Blob([JSON.stringify(settings)], { type: 'appliction/json' }),
             `asbplayer-settings-${timeString}.json`
@@ -1950,6 +1950,19 @@ export default function SettingsForm({
                         labelPlacement="start"
                         className={classes.switchLabel}
                     />
+                    <LabelWithHoverEffect
+                        control={
+                            <Switch
+                                checked={subtitleOffsetAffectsMining}
+                                onChange={(event) =>
+                                    handleSettingChanged('subtitleOffsetAffectsMining', event.target.checked)
+                                }
+                            />
+                        }
+                        label={t('settings.subtitleOffsetAffectsMining')}
+                        labelPlacement="start"
+                        className={classes.switchLabel}
+                    />
                     <TextField
                         type="number"
                         label={t('settings.audioPaddingStart')}
@@ -2263,8 +2276,8 @@ export default function SettingsForm({
                                         input: {
                                             endAdornment:
                                                 localFontFamilies.length === 0 &&
-                                                localFontsAvailable &&
-                                                localFontsPermission === 'prompt' ? (
+                                                    localFontsAvailable &&
+                                                    localFontsPermission === 'prompt' ? (
                                                     <Tooltip title={t('settings.unlockLocalFonts')!}>
                                                         <IconButton onClick={onUnlockLocalFonts}>
                                                             <LockIcon fontSize="small" />
@@ -2276,10 +2289,10 @@ export default function SettingsForm({
                                 >
                                     {localFontFamilies.length > 0
                                         ? localFontFamilies.map((f) => (
-                                              <MenuItem key={f} value={f}>
-                                                  {f}
-                                              </MenuItem>
-                                          ))
+                                            <MenuItem key={f} value={f}>
+                                                {f}
+                                            </MenuItem>
+                                        ))
                                         : null}
                                 </TextField>
                             </div>

@@ -209,6 +209,8 @@ enum SelectionState {
     outsideSelection = 2,
 }
 
+
+
 interface SubtitleRowProps extends TableRowProps {
     index: number;
     compressed: boolean;
@@ -407,8 +409,8 @@ export default function SubtitlePlayer({
         () =>
             subtitles
                 ? Array(subtitles.length)
-                      .fill(undefined)
-                      .map((_) => createRef<HTMLTableRowElement>())
+                    .fill(undefined)
+                    .map((_) => createRef<HTMLTableRowElement>())
                 : [],
         [subtitles]
     );

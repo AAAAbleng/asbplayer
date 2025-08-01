@@ -318,6 +318,7 @@
         "speedChangeStep": "Playback speed adjust step",
         "fastForwardModePlaybackRate": "Fast-forward mode playback rate",
         "copyOnMine": "Copy mined subtitles to clipboard",
+        "subtitleOffsetAffectsMining": "Subtitle offset affect mining",
         "corsHelperText": "Ensure that {{origin}} is in the webCorsOriginList in your AnkiConnect settings as in this <0>video</0>.",
         "customCssField": "CSS: {{styleKey}}",
         "deck": "Deck",

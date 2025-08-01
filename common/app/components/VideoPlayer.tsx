@@ -153,6 +153,90 @@ function errorMessage(element: HTMLVideoElement) {
     return error + ': ' + (element.error?.message || '<details missing>');
 }
 
+/**
+ * 生成卡拉OK字幕HTML，根据当前时间逐字显示文字
+ * 支持双行轮换显示效果
+ */
+const generateKaraokeSubtitleHtml = (
+    subtitle: IndexedSubtitleModel,
+    currentTime: number,
+    subtitleStyles: string,
+    subtitleClasses: string,
+    allSubtitles: IndexedSubtitleModel[],
+    currentSubtitleIndex: number,
+    offset: number = 0
+): string => {
+    if (!subtitle.karaokeSegments || subtitle.karaokeSegments.length === 0) {
+        // 如果没有卡拉OK数据，使用普通渲染
+        const lines = subtitle.text.split('\n');
+        const allSubtitleClasses = subtitleClasses ? `${subtitleClasses} subtitle-line` : 'subtitle-line';
+        return lines
+            .map((line) => `<div class="${allSubtitleClasses} karaoke-subtitle-box" style="${subtitleStyles}; white-space: normal; text-align: left; line-height: 1.2;">${line}</div>`)
+            .join('');
+    }
+
+    // 判断当前字幕的轮动状态
+    const isCurrentlyShowing = currentTime >= subtitle.start && currentTime < subtitle.end;
+    const hasFinished = currentTime >= subtitle.end;
+
+    // 检查下一句字幕的状态
+    const nextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 1);
+    const nextSubtitleStarted = nextSubtitle && currentTime >= nextSubtitle.start;
+
+    // 字幕轮动逻辑：每句话都经历 下行显示 → 上行保留 → 消失
+    let lineClass = 'karaoke-bottom-line'; // 默认在下行显示
+    let shouldShow = true;
+
+    if (hasFinished && nextSubtitleStarted) {
+        // 当前句已结束且下一句已开始：移到上行保留
+        lineClass = 'karaoke-top-line';
+
+        // 检查是否应该消失（当下下句开始时）
+        const nextNextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 2);
+        if (nextNextSubtitle && currentTime >= nextNextSubtitle.start) {
+            shouldShow = false; // 下下句开始时，当前句消失
+        }
+    }
+
+    const allSubtitleClasses = subtitleClasses ? `${subtitleClasses} subtitle-line ${lineClass}` : `subtitle-line ${lineClass}`;
+
+    // 如果不应该显示，返回空内容
+    if (!shouldShow) {
+        return `<div class="${allSubtitleClasses}" style="${subtitleStyles}; opacity: 0; white-space: normal;"></div>`;
+    }
+
+    // 使用固定宽度的容器，允许换行但紧凑行间距
+    let html = `<div class="${allSubtitleClasses} karaoke-subtitle-box" style="${subtitleStyles}; white-space: normal; text-align: left; line-height: 1.2;">`;
+
+    // 检测是否为英文内容（包含英文字母）
+    const hasEnglish = /[a-zA-Z]/.test(subtitle.text);
+
+    for (let i = 0; i < subtitle.karaokeSegments.length; i++) {
+        const segment = subtitle.karaokeSegments[i];
+        // 对于卡拉OK字幕，在比较时间时考虑偏移，但保持原始时间戳不变
+        const adjustedSegmentStartTime = segment.startTime + offset;
+        const shouldShow = currentTime >= adjustedSegmentStartTime;
+
+        if (shouldShow) {
+            let segmentText = segment.text;
+
+            // 如果是英文内容，且当前片段不是第一个，且前一个片段也显示了，且当前片段不以标点符号开头
+            const prevSegmentAdjustedTime = subtitle.karaokeSegments[i - 1]?.startTime + offset;
+            if (hasEnglish && i > 0 && currentTime >= prevSegmentAdjustedTime && !/^[.,!?;:]/.test(segmentText)) {
+                // 在英文单词前添加空格
+                segmentText = ' ' + segmentText;
+            }
+
+            // 显示文字，使用原有样式，每个片段作为inline元素横向排列
+            html += `<span style="display: inline;">${segmentText}</span>`;
+        }
+        // 如果时间未到，则不显示该片段（文字逐个出现效果）
+    }
+
+    html += '</div>';
+    return html;
+};
+
 const showingSubtitleHtml = (
     subtitle: IndexedSubtitleModel,
     videoRef: MutableRefObject<ExperimentalHTMLVideoElement | undefined>,
@@ -217,14 +301,172 @@ const CachedShowingSubtitle = React.memo(function CachedShowingSubtitle({
     );
 });
 
+interface KaraokeSubtitleProps {
+    subtitle: IndexedSubtitleModel;
+    currentTime: number;
+    subtitleStyles: string;
+    subtitleClasses: string;
+    allSubtitles: IndexedSubtitleModel[];
+    className?: string;
+    onMouseOver: React.MouseEventHandler<HTMLDivElement>;
+    isPlaying: boolean; // 添加播放状态参数
+    offset: number; // 添加偏移参数
+}
+
+const KaraokeSubtitle = React.memo(function KaraokeSubtitle({
+    subtitle,
+    currentTime,
+    subtitleStyles,
+    subtitleClasses,
+    allSubtitles,
+    className,
+    onMouseOver,
+    isPlaying,
+    offset,
+}: KaraokeSubtitleProps) {
+    const currentSubtitleIndex = allSubtitles.findIndex(s => s.index === subtitle.index);
+
+    // 如果视频暂停，显示可选中的完整文本
+    if (!isPlaying) {
+        // 判断当前字幕的轮动状态（与播放时保持一致）
+        const hasFinished = currentTime >= subtitle.end;
+
+        // 检查下一句字幕的状态
+        const nextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 1);
+        const nextSubtitleStarted = nextSubtitle && currentTime >= nextSubtitle.start;
+
+        // 字幕轮动逻辑：每句话都经历 下行显示 → 上行保留 → 消失
+        let lineClass = 'karaoke-bottom-line'; // 默认在下行显示
+        let shouldShow = true;
+
+        if (hasFinished && nextSubtitleStarted) {
+            // 当前句已结束且下一句已开始：移到上行保留
+            lineClass = 'karaoke-top-line';
+
+            // 检查是否应该消失（当下下句开始时）
+            const nextNextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 2);
+            if (nextNextSubtitle && currentTime >= nextNextSubtitle.start) {
+                shouldShow = false; // 下下句开始时，当前句消失
+            }
+        }
+
+        const allSubtitleClasses = subtitleClasses ? `${subtitleClasses} subtitle-line ${lineClass}` : `subtitle-line ${lineClass}`;
+
+        // 如果不应该显示，返回空内容
+        if (!shouldShow) {
+            return (
+                <div
+                    className={className ? className : ''}
+                    onMouseOver={onMouseOver}
+                    style={{ opacity: 0, whiteSpace: 'normal' }}
+                />
+            );
+        }
+
+        // 暂停时显示到当前时间为止的内容，保持与播放时相同的显示
+        // 生成与播放时相同的内容，但使用可选中的DOM结构
+
+        // 检测是否为英文内容（包含英文字母）
+        const hasEnglish = /[a-zA-Z]/.test(subtitle.text);
+        let pausedContent = '';
+
+        for (let i = 0; i < subtitle.karaokeSegments!.length; i++) {
+            const segment = subtitle.karaokeSegments![i];
+            // 对于卡拉OK字幕，在比较时间时考虑偏移
+            const adjustedSegmentStartTime = segment.startTime + offset;
+            const shouldShow = currentTime >= adjustedSegmentStartTime;
+
+            if (shouldShow) {
+                let segmentText = segment.text;
+
+                // 如果是英文内容，且当前片段不是第一个，且前一个片段也显示了，且当前片段不以标点符号开头
+                const prevSegmentAdjustedTime = subtitle.karaokeSegments![i - 1]?.startTime + offset;
+                if (hasEnglish && i > 0 && currentTime >= prevSegmentAdjustedTime && !/^[.,!?;:]/.test(segmentText)) {
+                    // 在英文单词前添加空格
+                    segmentText = ' ' + segmentText;
+                }
+
+                pausedContent += segmentText;
+            }
+            // 如果时间未到，则不显示该片段（与播放时逻辑完全一致）
+        }
+
+        return (
+            <div
+                className={className ? className : ''}
+                onMouseOver={onMouseOver}
+            >
+                <div
+                    className={`${allSubtitleClasses} karaoke-subtitle-box`}
+                    style={{
+                        whiteSpace: 'normal',
+                        textAlign: 'left',
+                        lineHeight: '1.2',
+                        userSelect: 'text', // 允许文本选择
+                        cursor: 'text' // 显示文本光标
+                    }}
+                    dangerouslySetInnerHTML={{
+                        __html: `<span style="${subtitleStyles}">${pausedContent}</span>`
+                    }}
+                />
+            </div>
+        );
+    }
+
+    // 播放时使用原有的逐字显示逻辑
+    const htmlContent = generateKaraokeSubtitleHtml(
+        subtitle,
+        currentTime,
+        subtitleStyles,
+        subtitleClasses,
+        allSubtitles,
+        currentSubtitleIndex,
+        offset
+    );
+
+    return (
+        <div
+            className={className ? className : ''}
+            onMouseOver={onMouseOver}
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+        />
+    );
+});
+
 const useSubtitleContainerStyles = makeStyles(() => ({
     subtitleContainer: {
         position: 'absolute',
         paddingLeft: 20,
         paddingRight: 20,
-        textAlign: 'center',
-        whiteSpace: 'normal',
+        textAlign: 'center', // 容器居中对齐
+        whiteSpace: 'normal', // 允许换行
         lineHeight: 'inherit',
+        width: '80%', // 固定宽度为80%
+        left: '10%', // 居中定位
+        '& .karaoke-subtitle-box': {
+            display: 'inline-block',
+            width: '100%', // 字幕框占满容器
+            textAlign: 'left', // 文字左对齐
+            position: 'relative',
+            minHeight: '1.2em', // 最小高度避免跳动
+            lineHeight: '1.2', // 同一句话内的行间距为紧凑的1.2倍
+        },
+        '& .karaoke-top-line': {
+            position: 'absolute',
+            bottom: '100%',
+            left: 0,
+            right: 0,
+            marginBottom: '10px', // 不同句子间的间距为10px
+            textAlign: 'left', // 上行文字左对齐
+            whiteSpace: 'normal', // 上行允许换行
+            lineHeight: '1.2', // 同一句话内的行间距为紧凑的1.2倍
+        },
+        '& .karaoke-bottom-line': {
+            position: 'relative',
+            textAlign: 'left', // 下行文字左对齐
+            whiteSpace: 'normal', // 下行允许换行
+            lineHeight: '1.2', // 同一句话内的行间距为紧凑的1.2倍
+        },
     },
 }));
 
@@ -365,6 +607,7 @@ export default function VideoPlayer({
         [subtitles]
     );
     const [showSubtitles, setShowSubtitles] = useState<IndexedSubtitleModel[]>([]);
+    const [karaokeUpdateTrigger, setKaraokeUpdateTrigger] = useState<number>(0); // 用于强制卡拉OK字幕重新渲染
     const [miscSettings, setMiscSettings] = useState<MiscSettings>(settings);
     const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>(settings);
     const [ankiSettings, setAnkiSettings] = useState<AnkiSettings>(settings);
@@ -530,7 +773,10 @@ export default function VideoPlayer({
                 end: s.originalEnd + offset,
                 originalEnd: s.originalEnd,
                 track: s.track,
-                index: i,
+                index: s.index, // 保留原始index，确保双层显示逻辑正常工作
+                // 对于卡拉OK字幕，保持原始的karaokeSegments不变，在渲染时动态处理偏移
+                // 这样可以保持卡拉OK片段之间的相对时间关系，避免破坏逐字显示逻辑
+                karaokeSegments: s.karaokeSegments,
             }))
         );
     }, []);
@@ -720,6 +966,64 @@ export default function VideoPlayer({
                 }
             }
 
+            // 对于卡拉OK字幕，需要特殊处理轮动显示和保持显示
+            const allKaraokeSubtitles = subtitles.filter(s => s.karaokeSegments && s.karaokeSegments.length > 0);
+            const hasKaraokeSubtitles = allKaraokeSubtitles.length > 0;
+
+            if (hasKaraokeSubtitles) {
+                // 找到当前显示的卡拉OK字幕
+                const currentKaraokeSubtitles = showSubtitles.filter(s => s.karaokeSegments && s.karaokeSegments.length > 0);
+
+                // 如果没有当前显示的卡拉OK字幕，找到最近结束的字幕保持显示
+                if (currentKaraokeSubtitles.length === 0) {
+                    // 找到最近结束的卡拉OK字幕
+                    const recentEndedSubtitle = allKaraokeSubtitles
+                        .filter(s => now >= s.end && !disabledSubtitleTracks[s.track])
+                        .sort((a, b) => b.end - a.end)[0]; // 按结束时间降序排列，取最近的
+
+                    if (recentEndedSubtitle) {
+                        showSubtitles.push(recentEndedSubtitle);
+                        currentKaraokeSubtitles.push(recentEndedSubtitle);
+                    }
+                }
+
+                for (const currentSub of currentKaraokeSubtitles) {
+                    // 检查是否需要显示前一句（在上行保留）
+                    const prevSubtitle = allKaraokeSubtitles.find(s =>
+                        s.index === currentSub.index - 1 &&
+                        !disabledSubtitleTracks[s.track]
+                    );
+
+                    if (prevSubtitle && now >= prevSubtitle.end && now >= currentSub.start) {
+                        // 前一句已结束且当前句已开始，保留前一句在上行
+                        if (!showSubtitles.find(s => s.index === prevSubtitle.index)) {
+                            showSubtitles.push(prevSubtitle);
+                        }
+                    }
+
+                    // 检查下一句是否开始（轮动触发条件）
+                    const nextSubtitle = allKaraokeSubtitles.find(s =>
+                        s.index === currentSub.index + 1 &&
+                        !disabledSubtitleTracks[s.track]
+                    );
+
+                    if (nextSubtitle && now >= nextSubtitle.start) {
+                        // 下一句开始时，前前句消失
+                        const prevPrevSubtitle = allKaraokeSubtitles.find(s =>
+                            s.index === currentSub.index - 1 &&
+                            !disabledSubtitleTracks[s.track]
+                        );
+
+                        if (prevPrevSubtitle) {
+                            const indexToRemove = showSubtitles.findIndex(s => s.index === prevPrevSubtitle.index);
+                            if (indexToRemove !== -1) {
+                                showSubtitles.splice(indexToRemove, 1);
+                            }
+                        }
+                    }
+                }
+            }
+
             if (slice.startedShowing && !disabledSubtitleTracks[slice.startedShowing.track]) {
                 autoPauseContext.startedShowing(slice.startedShowing);
             }
@@ -730,13 +1034,20 @@ export default function VideoPlayer({
 
             showSubtitles = showSubtitles.sort((s1, s2) => s1.track - s2.track);
 
-            if (!arrayEquals(showSubtitles, showSubtitlesRef.current, (s1, s2) => s1.index === s2.index)) {
+            const subtitlesChanged = !arrayEquals(showSubtitles, showSubtitlesRef.current, (s1, s2) => s1.index === s2.index);
+
+            if (subtitlesChanged) {
                 setShowSubtitles(showSubtitles);
                 if (showSubtitles.length > 0 && miscSettings.autoCopyCurrentSubtitle && document.hasFocus()) {
                     navigator.clipboard.writeText(showSubtitles.map((s) => s.text).join('\n')).catch((e) => {
                         // ignore
                     });
                 }
+            }
+
+            // 如果有卡拉OK字幕且正在播放，强制更新以实现逐字高亮效果
+            if (hasKaraokeSubtitles && playing()) {
+                setKaraokeUpdateTrigger(prev => prev + 1);
             }
         }, 100);
 
@@ -971,14 +1282,36 @@ export default function VideoPlayer({
             cardTextFieldValues: CardTextFieldValues,
             timestamp: number
         ) => {
+            // 根据设置决定是否需要抵扣offset来恢复原始时间
+            let adjustedSubtitle = subtitle;
+            let adjustedSurroundingSubtitles = surroundingSubtitles;
+            let adjustedTimestamp = timestamp;
+
+            if (!miscSettings.subtitleOffsetAffectsMining && offset !== 0) {
+                // 如果设置为不影响mining，则需要抵扣offset，恢复到原始字幕时间
+                adjustedSubtitle = {
+                    ...subtitle,
+                    start: subtitle.originalStart,
+                    end: subtitle.originalEnd,
+                };
+
+                adjustedSurroundingSubtitles = surroundingSubtitles.map(s => ({
+                    ...s,
+                    start: s.originalStart,
+                    end: s.originalEnd,
+                }));
+
+                adjustedTimestamp = timestamp - offset;
+            }
+
             switch (postMineAction) {
                 case PostMineAction.showAnkiDialog:
                     playerChannel.copy(
-                        subtitle,
-                        surroundingSubtitles,
+                        adjustedSubtitle,
+                        adjustedSurroundingSubtitles,
                         cardTextFieldValues,
                         videoFileName ?? '',
-                        timestamp,
+                        adjustedTimestamp,
                         PostMineAction.none
                     );
                     onAnkiDialogRequest(
@@ -986,10 +1319,10 @@ export default function VideoPlayer({
                         videoFileName ?? '',
                         selectedAudioTrack,
                         playbackRate,
-                        subtitle,
-                        surroundingSubtitles,
+                        adjustedSubtitle,
+                        adjustedSurroundingSubtitles,
                         cardTextFieldValues,
-                        timestamp
+                        adjustedTimestamp
                     );
 
                     if (playing()) {
@@ -1001,11 +1334,11 @@ export default function VideoPlayer({
                     break;
                 default:
                     playerChannel.copy(
-                        subtitle,
-                        surroundingSubtitles,
+                        adjustedSubtitle,
+                        adjustedSurroundingSubtitles,
                         cardTextFieldValues,
                         videoFileName ?? '',
-                        timestamp,
+                        adjustedTimestamp,
                         postMineAction
                     );
             }
@@ -1015,12 +1348,12 @@ export default function VideoPlayer({
                 videoFileName: videoFileName ?? '',
                 selectedAudioTrack,
                 playbackRate,
-                subtitle,
-                surroundingSubtitles,
-                timestamp,
+                subtitle: adjustedSubtitle,
+                surroundingSubtitles: adjustedSurroundingSubtitles,
+                timestamp: adjustedTimestamp,
             });
         },
-        [onAnkiDialogRequest, playerChannel]
+        [onAnkiDialogRequest, playerChannel, miscSettings.subtitleOffsetAffectsMining, offset]
     );
 
     const mineCurrentSubtitle = useCallback(
@@ -1531,14 +1864,38 @@ export default function VideoPlayer({
         parent.document.body.clientWidth === document.body.clientWidth;
 
     const subtitleAlignmentForTrack = (track: number) => subtitleAlignments[track] ?? subtitleAlignments[0];
-    const elementForSubtitle = (subtitle: IndexedSubtitleModel, index: number) => (
-        <CachedShowingSubtitle
-            key={index}
-            index={subtitle.index}
-            domCache={getSubtitleDomCache()}
-            onMouseOver={handleSubtitleMouseOver}
-        />
-    );
+    const elementForSubtitle = (subtitle: IndexedSubtitleModel, index: number) => {
+        // 检查是否为卡拉OK字幕
+        if (subtitle.karaokeSegments && subtitle.karaokeSegments.length > 0) {
+            const currentTime = clock.time(length);
+            const isCurrentlyPlaying = playing();
+            // 播放时使用更新触发器，暂停时使用播放状态作为key的一部分
+            const componentKey = isCurrentlyPlaying ? `${index}-${karaokeUpdateTrigger}` : `${index}-paused`;
+            return (
+                <KaraokeSubtitle
+                    key={componentKey}
+                    subtitle={subtitle}
+                    currentTime={currentTime}
+                    subtitleStyles={trackStyles[subtitle.track]?.styleString ?? trackStyles[0].styleString}
+                    subtitleClasses={trackStyles[subtitle.track]?.classes ?? trackStyles[0].classes}
+                    allSubtitles={subtitles} // 传递所有字幕数据用于双行显示逻辑
+                    onMouseOver={handleSubtitleMouseOver}
+                    isPlaying={isCurrentlyPlaying} // 传递播放状态
+                    offset={offset} // 传递偏移值用于卡拉OK字幕时间计算
+                />
+            );
+        }
+
+        // 普通字幕使用缓存组件
+        return (
+            <CachedShowingSubtitle
+                key={index}
+                index={subtitle.index}
+                domCache={getSubtitleDomCache()}
+                onMouseOver={handleSubtitleMouseOver}
+            />
+        );
+    };
 
     const subtitleElementsWithAlignment = (alignment: SubtitleAlignment) =>
         showSubtitles.filter((s) => subtitleAlignmentForTrack(s.track) === alignment).map(elementForSubtitle);

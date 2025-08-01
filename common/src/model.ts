@@ -20,6 +20,13 @@ export interface SubtitleTextImage {
     readonly image: DimensionsModel;
 }
 
+// 卡拉OK字幕的文字片段
+export interface KaraokeTextSegment {
+    readonly text: string;
+    readonly startTime: number; // 该片段开始显示的时间（毫秒）
+    readonly highlighted: boolean; // 是否为高亮文字（<c>标签内容）
+}
+
 export interface SubtitleModel {
     readonly text: string;
     readonly textImage?: SubtitleTextImage;
@@ -28,6 +35,7 @@ export interface SubtitleModel {
     readonly originalStart: number;
     readonly originalEnd: number;
     readonly track: number;
+    readonly karaokeSegments?: KaraokeTextSegment[]; // 卡拉OK字幕的逐字时间信息
 }
 
 export interface CardTextFieldValues {

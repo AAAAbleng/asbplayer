@@ -119,6 +119,7 @@ export const defaultSettings: AsbplayerSettings = {
     postMiningPlaybackState: PostMinePlayback.remember,
     themeType: 'dark',
     copyToClipboardOnMine: false,
+    subtitleOffsetAffectsMining: true, // 默认开启，保持原有行为
     rememberSubtitleOffset: true,
     lastSubtitleOffset: 0,
     autoCopyCurrentSubtitle: false,
