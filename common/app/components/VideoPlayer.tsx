@@ -180,22 +180,40 @@ const generateKaraokeSubtitleHtml = (
     const isCurrentlyShowing = currentTime >= subtitle.start && currentTime < subtitle.end;
     const hasFinished = currentTime >= subtitle.end;
 
-    // 检查下一句字幕的状态
+    // 检查下一句字幕的状态 - 使用第一个字符的实际显示时间（包含advancement）
     const nextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 1);
-    const nextSubtitleStarted = nextSubtitle && currentTime >= nextSubtitle.start;
+    let nextSubtitleStarted = false;
+    if (nextSubtitle && nextSubtitle.karaokeSegments && nextSubtitle.karaokeSegments.length > 0) {
+        // 对于卡拉OK字幕，使用第一个片段的调整后时间
+        const firstSegmentStartTime = nextSubtitle.karaokeSegments[0].startTime + offset + advancement;
+        nextSubtitleStarted = currentTime >= firstSegmentStartTime;
+    } else if (nextSubtitle) {
+        // 对于普通字幕，使用原始开始时间
+        nextSubtitleStarted = currentTime >= nextSubtitle.start;
+    }
 
     // 字幕轮动逻辑：每句话都经历 下行显示 → 上行保留 → 消失
     let lineClass = 'karaoke-bottom-line'; // 默认在下行显示
     let shouldShow = true;
 
     if (hasFinished && nextSubtitleStarted) {
-        // 当前句已结束且下一句已开始：移到上行保留
+        // 当前句已结束且下一句的第一个字已显示：移到上行保留
         lineClass = 'karaoke-top-line';
 
-        // 检查是否应该消失（当下下句开始时）
+        // 检查是否应该消失（当下下句的第一个字开始显示时）
         const nextNextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 2);
-        if (nextNextSubtitle && currentTime >= nextNextSubtitle.start) {
-            shouldShow = false; // 下下句开始时，当前句消失
+        let nextNextSubtitleStarted = false;
+        if (nextNextSubtitle && nextNextSubtitle.karaokeSegments && nextNextSubtitle.karaokeSegments.length > 0) {
+            // 对于卡拉OK字幕，使用第一个片段的调整后时间
+            const firstSegmentStartTime = nextNextSubtitle.karaokeSegments[0].startTime + offset + advancement;
+            nextNextSubtitleStarted = currentTime >= firstSegmentStartTime;
+        } else if (nextNextSubtitle) {
+            // 对于普通字幕，使用原始开始时间
+            nextNextSubtitleStarted = currentTime >= nextNextSubtitle.start;
+        }
+        
+        if (nextNextSubtitleStarted) {
+            shouldShow = false; // 下下句的第一个字开始显示时，当前句消失
         }
     }
 
@@ -334,22 +352,40 @@ const KaraokeSubtitle = React.memo(function KaraokeSubtitle({
         // 判断当前字幕的轮动状态（与播放时保持一致）
         const hasFinished = currentTime >= subtitle.end;
 
-        // 检查下一句字幕的状态
+        // 检查下一句字幕的状态 - 使用第一个字符的实际显示时间（包含advancement）
         const nextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 1);
-        const nextSubtitleStarted = nextSubtitle && currentTime >= nextSubtitle.start;
+        let nextSubtitleStarted = false;
+        if (nextSubtitle && nextSubtitle.karaokeSegments && nextSubtitle.karaokeSegments.length > 0) {
+            // 对于卡拉OK字幕，使用第一个片段的调整后时间
+            const firstSegmentStartTime = nextSubtitle.karaokeSegments[0].startTime + offset + advancement;
+            nextSubtitleStarted = currentTime >= firstSegmentStartTime;
+        } else if (nextSubtitle) {
+            // 对于普通字幕，使用原始开始时间
+            nextSubtitleStarted = currentTime >= nextSubtitle.start;
+        }
 
         // 字幕轮动逻辑：每句话都经历 下行显示 → 上行保留 → 消失
         let lineClass = 'karaoke-bottom-line'; // 默认在下行显示
         let shouldShow = true;
 
         if (hasFinished && nextSubtitleStarted) {
-            // 当前句已结束且下一句已开始：移到上行保留
+            // 当前句已结束且下一句的第一个字已显示：移到上行保留
             lineClass = 'karaoke-top-line';
 
-            // 检查是否应该消失（当下下句开始时）
+            // 检查是否应该消失（当下下句的第一个字开始显示时）
             const nextNextSubtitle = allSubtitles.find(s => s.index === currentSubtitleIndex + 2);
-            if (nextNextSubtitle && currentTime >= nextNextSubtitle.start) {
-                shouldShow = false; // 下下句开始时，当前句消失
+            let nextNextSubtitleStarted = false;
+            if (nextNextSubtitle && nextNextSubtitle.karaokeSegments && nextNextSubtitle.karaokeSegments.length > 0) {
+                // 对于卡拉OK字幕，使用第一个片段的调整后时间
+                const firstSegmentStartTime = nextNextSubtitle.karaokeSegments[0].startTime + offset + advancement;
+                nextNextSubtitleStarted = currentTime >= firstSegmentStartTime;
+            } else if (nextNextSubtitle) {
+                // 对于普通字幕，使用原始开始时间
+                nextNextSubtitleStarted = currentTime >= nextNextSubtitle.start;
+            }
+            
+            if (nextNextSubtitleStarted) {
+                shouldShow = false; // 下下句的第一个字开始显示时，当前句消失
             }
         }
 
@@ -999,21 +1035,40 @@ export default function VideoPlayer({
                         !disabledSubtitleTracks[s.track]
                     );
 
-                    if (prevSubtitle && now >= prevSubtitle.end && now >= currentSub.start) {
-                        // 前一句已结束且当前句已开始，保留前一句在上行
+                    // 检查当前句是否已经开始显示第一个字符（考虑advancement）
+                    let currentSubStarted = false;
+                    if (currentSub.karaokeSegments && currentSub.karaokeSegments.length > 0) {
+                        const firstSegmentStartTime = currentSub.karaokeSegments[0].startTime + (offset || 0) + (advancement || 0);
+                        currentSubStarted = now >= firstSegmentStartTime;
+                    } else {
+                        currentSubStarted = now >= currentSub.start;
+                    }
+
+                    if (prevSubtitle && now >= prevSubtitle.end && currentSubStarted) {
+                        // 前一句已结束且当前句第一个字已开始显示，保留前一句在上行
                         if (!showSubtitles.find(s => s.index === prevSubtitle.index)) {
                             showSubtitles.push(prevSubtitle);
                         }
                     }
 
-                    // 检查下一句是否开始（轮动触发条件）
+                    // 检查下一句是否开始（轮动触发条件）- 使用第一个字符的实际显示时间
                     const nextSubtitle = allKaraokeSubtitles.find(s =>
                         s.index === currentSub.index + 1 &&
                         !disabledSubtitleTracks[s.track]
                     );
 
-                    if (nextSubtitle && now >= nextSubtitle.start) {
-                        // 下一句开始时，前前句消失
+                    let nextSubtitleStarted = false;
+                    if (nextSubtitle && nextSubtitle.karaokeSegments && nextSubtitle.karaokeSegments.length > 0) {
+                        // 对于卡拉OK字幕，使用第一个片段的调整后时间
+                        const firstSegmentStartTime = nextSubtitle.karaokeSegments[0].startTime + (offset || 0) + (advancement || 0);
+                        nextSubtitleStarted = now >= firstSegmentStartTime;
+                    } else if (nextSubtitle) {
+                        // 对于普通字幕，使用原始开始时间
+                        nextSubtitleStarted = now >= nextSubtitle.start;
+                    }
+
+                    if (nextSubtitleStarted) {
+                        // 下一句第一个字开始显示时，前前句消失
                         const prevPrevSubtitle = allKaraokeSubtitles.find(s =>
                             s.index === currentSub.index - 1 &&
                             !disabledSubtitleTracks[s.track]
