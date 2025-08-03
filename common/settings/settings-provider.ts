@@ -122,6 +122,7 @@ export const defaultSettings: AsbplayerSettings = {
     subtitleOffsetAffectsMining: true, // 默认开启，保持原有行为
     rememberSubtitleOffset: true,
     lastSubtitleOffset: 0,
+    lastSubtitleAdvancement: 0,
     autoCopyCurrentSubtitle: false,
     alwaysPlayOnSubtitleRepeat: true,
     subtitleRegexFilter: '',

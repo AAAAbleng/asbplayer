@@ -164,7 +164,8 @@ const generateKaraokeSubtitleHtml = (
     subtitleClasses: string,
     allSubtitles: IndexedSubtitleModel[],
     currentSubtitleIndex: number,
-    offset: number = 0
+    offset: number = 0,
+    advancement: number = 0
 ): string => {
     if (!subtitle.karaokeSegments || subtitle.karaokeSegments.length === 0) {
         // 如果没有卡拉OK数据，使用普通渲染
@@ -213,15 +214,15 @@ const generateKaraokeSubtitleHtml = (
 
     for (let i = 0; i < subtitle.karaokeSegments.length; i++) {
         const segment = subtitle.karaokeSegments[i];
-        // 对于卡拉OK字幕，在比较时间时考虑偏移，但保持原始时间戳不变
-        const adjustedSegmentStartTime = segment.startTime + offset;
+        // 对于卡拉OK字幕，在比较时间时考虑偏移和advancement，但保持原始时间戳不变
+        const adjustedSegmentStartTime = segment.startTime + offset + advancement;
         const shouldShow = currentTime >= adjustedSegmentStartTime;
 
         if (shouldShow) {
             let segmentText = segment.text;
 
             // 如果是英文内容，且当前片段不是第一个，且前一个片段也显示了，且当前片段不以标点符号开头
-            const prevSegmentAdjustedTime = subtitle.karaokeSegments[i - 1]?.startTime + offset;
+            const prevSegmentAdjustedTime = subtitle.karaokeSegments[i - 1]?.startTime + offset + advancement;
             if (hasEnglish && i > 0 && currentTime >= prevSegmentAdjustedTime && !/^[.,!?;:]/.test(segmentText)) {
                 // 在英文单词前添加空格
                 segmentText = ' ' + segmentText;
@@ -311,6 +312,7 @@ interface KaraokeSubtitleProps {
     onMouseOver: React.MouseEventHandler<HTMLDivElement>;
     isPlaying: boolean; // 添加播放状态参数
     offset: number; // 添加偏移参数
+    advancement: number; // 添加advancement参数
 }
 
 const KaraokeSubtitle = React.memo(function KaraokeSubtitle({
@@ -323,6 +325,7 @@ const KaraokeSubtitle = React.memo(function KaraokeSubtitle({
     onMouseOver,
     isPlaying,
     offset,
+    advancement,
 }: KaraokeSubtitleProps) {
     const currentSubtitleIndex = allSubtitles.findIndex(s => s.index === subtitle.index);
 
@@ -421,7 +424,8 @@ const KaraokeSubtitle = React.memo(function KaraokeSubtitle({
         subtitleClasses,
         allSubtitles,
         currentSubtitleIndex,
-        offset
+        offset,
+        advancement
     );
 
     return (
@@ -594,6 +598,7 @@ export default function VideoPlayer({
     const [length, setLength] = useState<number>(0);
     const [videoFileName, setVideoFileName] = useState<string>();
     const [offset, setOffset] = useState<number>(0);
+    const [advancement, setAdvancement] = useState<number>(0);
     const [audioTracks, setAudioTracks] = useState<AudioTrackModel[]>();
     const [selectedAudioTrack, setSelectedAudioTrack] = useState<string>();
     const [wasPlayingOnAnkiDialogRequest, setWasPlayingOnAnkiDialogRequest] = useState<boolean>(false);
@@ -1070,6 +1075,15 @@ export default function VideoPlayer({
             playerChannel.offset(offset);
         },
         [playerChannel, updateSubtitlesWithOffset]
+    );
+
+    const handleAdvancementChange = useCallback(
+        (advancement: number) => {
+            setAdvancement(advancement);
+            // 强制重新渲染卡拉OK字幕
+            setKaraokeUpdateTrigger(prev => prev + 1);
+        },
+        []
     );
 
     const handlePlaybackRateChange = useCallback(
@@ -1882,6 +1896,7 @@ export default function VideoPlayer({
                     onMouseOver={handleSubtitleMouseOver}
                     isPlaying={isCurrentlyPlaying} // 传递播放状态
                     offset={offset} // 传递偏移值用于卡拉OK字幕时间计算
+                    advancement={advancement} // 传递advancement值用于卡拉OK字幕时间计算
                 />
             );
         }
@@ -1993,6 +2008,8 @@ export default function VideoPlayer({
                 subtitlesEnabled={displaySubtitles}
                 offsetEnabled={true}
                 offset={offset}
+                advancement={advancement}
+                advancementEnabled={subtitles.some(s => s.karaokeSegments && s.karaokeSegments.length > 0)}
                 playbackRate={videoRef.current?.playbackRate ?? 1}
                 playbackRateEnabled={true}
                 fullscreenEnabled={true}
@@ -2015,6 +2032,7 @@ export default function VideoPlayer({
                 onFullscreenToggle={handleFullscreenToggle}
                 onVolumeChange={handleVolumeChange}
                 onOffsetChange={handleOffsetChange}
+                onAdvancementChange={handleAdvancementChange}
                 onPlaybackRateChange={handlePlaybackRateChange}
                 onPopOutToggle={handlePopOutToggle}
                 onPlayMode={handlePlayMode}

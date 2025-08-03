@@ -117,6 +117,7 @@ it('validates exported settings', () => {
         copyToClipboardOnMine: false,
         rememberSubtitleOffset: true,
         lastSubtitleOffset: 0,
+        lastSubtitleAdvancement: 0,
         autoCopyCurrentSubtitle: false,
         alwaysPlayOnSubtitleRepeat: true,
         subtitleRegexFilter: '',

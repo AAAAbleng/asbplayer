@@ -305,6 +305,9 @@ const settingsSchema = {
         lastSubtitleOffset: {
             type: 'number',
         },
+        lastSubtitleAdvancement: {
+            type: 'number',
+        },
         autoCopyCurrentSubtitle: {
             type: 'boolean',
         },

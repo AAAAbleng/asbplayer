@@ -41,6 +41,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { isMobile } from 'react-device-detect';
 import SubtitleOffsetInput from '../../components/SubtitleOffsetInput';
+import SubtitleAdvancementInput from '../../components/SubtitleAdvancementInput';
 import PlaybackRateInput from '../../components/PlaybackRateInput';
 import VideoElementFavicon from './VideoElementFavicon';
 import PlayModeSelector from '../../components/PlayModeSelector';
@@ -478,6 +479,8 @@ interface ControlsProps {
     offsetEnabled?: boolean;
     displayLength?: number;
     offset: number;
+    advancement: number;
+    advancementEnabled?: boolean;
     playbackRate: number;
     playbackRateEnabled?: boolean;
     onAudioTrackSelected: (id: string) => void;
@@ -489,6 +492,7 @@ interface ControlsProps {
     onTabSelected?: (tab: VideoTabModel) => void;
     onUnloadVideo?: () => void;
     onOffsetChange: (offset: number) => void;
+    onAdvancementChange: (advancement: number) => void;
     onPlaybackRateChange: (playbackRate: number) => void;
     onVolumeChange?: (volume: number) => void;
     disableKeyEvents?: boolean;
@@ -532,6 +536,8 @@ export default function Controls({
     offsetEnabled,
     displayLength,
     offset,
+    advancement,
+    advancementEnabled,
     playbackRate,
     playbackRateEnabled,
     onAudioTrackSelected,
@@ -543,6 +549,7 @@ export default function Controls({
     onTabSelected,
     onUnloadVideo,
     onOffsetChange,
+    onAdvancementChange,
     onPlaybackRateChange,
     onVolumeChange,
     disableKeyEvents,
@@ -599,6 +606,7 @@ export default function Controls({
     const lastShowRef = useRef<boolean>(true);
     const forceShowRef = useRef<boolean>(false);
     const offsetInputRef = useRef<HTMLInputElement>(undefined);
+    const advancementInputRef = useRef<HTMLInputElement>(undefined);
     const playbackRateInputRef = useRef<HTMLInputElement>(undefined);
     const containerRef = useRef<HTMLDivElement>(null);
     const [, updateState] = useState<any>();
@@ -649,8 +657,8 @@ export default function Controls({
                     (mousePositionRef.current !== undefined &&
                         lastMousePositionRef.current !== undefined &&
                         Math.pow(mousePositionRef.current.x - lastMousePositionRef.current.x, 2) +
-                            Math.pow(mousePositionRef.current.y - lastMousePositionRef.current.y, 2) >
-                            100);
+                        Math.pow(mousePositionRef.current.y - lastMousePositionRef.current.y, 2) >
+                        100);
             } else {
                 currentShow =
                     mousePositionRef.current !== undefined &&
@@ -663,6 +671,7 @@ export default function Controls({
                 currentShow ||
                 forceShowRef.current ||
                 offsetInputRef.current === document.activeElement ||
+                advancementInputRef.current === document.activeElement ||
                 playbackRateInputRef.current === document.activeElement ||
                 (!playing && isMobile) ||
                 Date.now() - lastNumberInputChangeTimestampRef.current < 2000;
@@ -688,6 +697,14 @@ export default function Controls({
             onOffsetChange(offset);
         },
         [onOffsetChange]
+    );
+
+    const handleAdvancementChange = useCallback(
+        (advancement: number) => {
+            lastNumberInputChangeTimestampRef.current = Date.now();
+            onAdvancementChange(advancement);
+        },
+        [onAdvancementChange]
     );
 
     const handlePlaybackRateChange = useCallback(
@@ -975,6 +992,18 @@ export default function Controls({
                                                 inputRef={offsetInputRef}
                                                 offset={offset}
                                                 onOffset={handleOffsetChange}
+                                                disableKeyEvents={disableKeyEvents}
+                                            />
+                                        </Grid>
+                                    </Tooltip>
+                                )}
+                                {advancementEnabled && !showVolumeBar && !isReallySmallScreen && (
+                                    <Tooltip title={t('controls.subtitleAdvancement')!}>
+                                        <Grid item style={{ marginLeft: 10 }}>
+                                            <SubtitleAdvancementInput
+                                                inputRef={advancementInputRef}
+                                                advancement={advancement}
+                                                onAdvancement={handleAdvancementChange}
                                                 disableKeyEvents={disableKeyEvents}
                                             />
                                         </Grid>
